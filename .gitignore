@@ -1,0 +1,6 @@
+credenciales.json
+dispositivo.json
+reportes/
+qr_sucursales/
+__pycache__/
+*.pyc
