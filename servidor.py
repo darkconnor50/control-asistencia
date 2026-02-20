@@ -13,7 +13,12 @@ SCOPES = [
 
 ID_HOJA = '159p8vlPVs0Nh1yMjuXdFhUGclXjT6e9BalQ2H8No6dA'
 
-creds = Credentials.from_service_account_file('credenciales.json', scopes=SCOPES)
+import os, json
+creds_json = os.environ.get("GOOGLE_CREDENTIALS")
+if creds_json:
+    creds = Credentials.from_service_account_info(json.loads(creds_json), scopes=SCOPES)
+else:
+    creds = Credentials.from_service_account_file('credenciales.json', scopes=SCOPES)
 cliente = gspread.authorize(creds)
 hoja = cliente.open_by_key(ID_HOJA)
 
@@ -171,4 +176,5 @@ def registrar():
     return jsonify({'mensaje': f'{tipo} registrada para {nombre} a las {ahora.strftime("%H:%M:%S")}{mensaje_retardo}'})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port, debug=False))
