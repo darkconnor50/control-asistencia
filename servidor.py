@@ -1,7 +1,8 @@
 import os
 import json
 import io
-from flask import Flask, request, jsonify, send_file
+from functools import wraps
+from flask import Flask, request, jsonify, send_file, session, redirect
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
@@ -17,6 +18,9 @@ SCOPES = [
 
 ID_HOJA = '159p8vlPVs0Nh1yMjuXdFhUGclXjT6e9BalQ2H8No6dA'
 
+app.secret_key = os.environ.get("SECRET_KEY", "clave_secreta_123")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
+
 creds_json = os.environ.get("GOOGLE_CREDENTIALS", "").strip().lstrip('\ufeff')
 if creds_json:
     creds = Credentials.from_service_account_info(json.loads(creds_json), scopes=SCOPES)
@@ -30,6 +34,57 @@ hoja_empleados = hoja.worksheet('EMPLEADOS')
 hoja_sucursales = hoja.worksheet('SUCURSALES')
 hoja_registros = hoja.worksheet('REGISTROS')
 hoja_turnos = hoja.worksheet('TURNOS')
+
+def login_requerido(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get('autenticado'):
+            return redirect('/login')
+        return f(*args, **kwargs)
+    return decorated
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    error = ''
+    if request.method == 'POST':
+        password = request.form.get('password')
+        if password == ADMIN_PASSWORD:
+            session['autenticado'] = True
+            return redirect('/admin')
+        else:
+            error = 'Contraseña incorrecta'
+
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Admin - Login</title>
+        <style>
+            body {{ font-family: Arial; text-align: center; padding: 60px; background: #f0f0f0; }}
+            h1 {{ color: #333; }}
+            input {{ width: 300px; padding: 12px; margin: 10px; font-size: 16px; border-radius: 8px; border: 1px solid #ccc; }}
+            button {{ width: 300px; padding: 12px; background: #333; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; }}
+            .error {{ color: red; margin-top: 10px; }}
+        </style>
+    </head>
+    <body>
+        <h1>Panel de Administración</h1>
+        <p>Ingresa la contraseña para continuar</p>
+        <form method="POST">
+            <input type="password" name="password" placeholder="Contraseña" /><br>
+            <button type="submit">ENTRAR</button>
+        </form>
+        <p class="error">{error}</p>
+    </body>
+    </html>
+    """
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect('/login')
 
 @app.route('/sucursal/<id_sucursal>')
 def pagina_sucursal(id_sucursal):
@@ -153,7 +208,6 @@ def registrar():
 
     sucursal = next((s for s in sucursales if str(s['ID_SUCURSAL']) == id_sucursal), None)
 
-    # Buscar turno del empleado
     turnos = hoja_turnos.get_all_records()
     turno = next((t for t in turnos if str(t['ID_TURNO']) == str(id_turno)), None)
 
@@ -180,7 +234,100 @@ def registrar():
 
     return jsonify({'mensaje': f'{tipo} registrada para {nombre} a las {ahora.strftime("%H:%M:%S")}{mensaje_retardo}'})
 
+@app.route('/admin')
+@login_requerido
+def admin():
+    empleados = hoja_empleados.get_all_records()
+    turnos = hoja_turnos.get_all_records()
+
+    filas_empleados = ""
+    for e in empleados:
+        opciones_turnos = ""
+        for t in turnos:
+            selected = 'selected' if str(t['ID_TURNO']) == str(e.get('ID_TURNO', 1)) else ''
+            opciones_turnos += f"<option value='{t['ID_TURNO']}' {selected}>{t['NOMBRE_TURNO']}</option>"
+        filas_empleados += f"""
+        <tr>
+            <td>{e['NOMBRE']}</td>
+            <td>
+                <select onchange="cambiarTurno('{e['ID_DISPOSITIVO']}', this.value)">
+                    {opciones_turnos}
+                </select>
+            </td>
+        </tr>
+        """
+
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Panel Admin</title>
+        <style>
+            body {{ font-family: Arial; padding: 30px; background: #f0f0f0; }}
+            h1 {{ color: #333; text-align: center; }}
+            table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; }}
+            th {{ background: #333; color: white; padding: 12px; text-align: left; }}
+            td {{ padding: 12px; border-bottom: 1px solid #eee; }}
+            select {{ padding: 8px; border-radius: 6px; border: 1px solid #ccc; font-size: 14px; }}
+            #mensaje {{ text-align: center; margin-top: 20px; font-weight: bold; color: #28a745; }}
+            .btn-reporte {{ display: inline-block; padding: 12px 24px; background: #007bff; color: white; text-align: center; border-radius: 8px; text-decoration: none; font-size: 16px; margin: 10px; }}
+            .btn-logout {{ display: inline-block; padding: 12px 24px; background: #dc3545; color: white; text-align: center; border-radius: 8px; text-decoration: none; font-size: 16px; margin: 10px; }}
+            .botones {{ text-align: center; margin-bottom: 20px; }}
+        </style>
+    </head>
+    <body>
+        <h1>Panel de Administración</h1>
+        <div class="botones">
+            <a href="/reporte" class="btn-reporte">📥 Descargar Reporte</a>
+            <a href="/logout" class="btn-logout">🚪 Cerrar Sesión</a>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Empleado</th>
+                    <th>Turno</th>
+                </tr>
+            </thead>
+            <tbody>
+                {filas_empleados}
+            </tbody>
+        </table>
+        <p id="mensaje"></p>
+        <script>
+            async function cambiarTurno(uuid, idTurno) {{
+                const res = await fetch('/cambiar_turno', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{uuid, id_turno: idTurno}})
+                }});
+                const data = await res.json();
+                document.getElementById('mensaje').innerText = data.mensaje;
+            }}
+        </script>
+    </body>
+    </html>
+    """
+    return html
+
+@app.route('/cambiar_turno', methods=['POST'])
+@login_requerido
+def cambiar_turno():
+    datos = request.json
+    uuid = datos['uuid']
+    id_turno = datos['id_turno']
+
+    empleados = hoja_empleados.get_all_records()
+    for i, e in enumerate(empleados, 2):
+        if e['ID_DISPOSITIVO'] == uuid:
+            hoja_empleados.update_cell(i, 4, id_turno)
+            return jsonify({'mensaje': f'Turno actualizado correctamente para {e["NOMBRE"]}'})
+
+    return jsonify({'mensaje': 'Empleado no encontrado'})
+
 @app.route('/reporte')
+@login_requerido
 def descargar_reporte():
     registros = hoja_registros.get_all_records()
     if not registros:
@@ -251,148 +398,6 @@ def descargar_reporte():
         as_attachment=True,
         download_name=f'reporte_{fecha_reporte}.xlsx'
     )
-from functools import wraps
-from flask import session, redirect, url_for
-
-app.secret_key = os.environ.get("SECRET_KEY", "clave_secreta_123")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
-
-def login_requerido(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if not session.get('autenticado'):
-            return redirect('/login')
-        return f(*args, **kwargs)
-    return decorated
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    error = ''
-    if request.method == 'POST':
-        password = request.form.get('password')
-        if password == ADMIN_PASSWORD:
-            session['autenticado'] = True
-            return redirect('/admin')
-        else:
-            error = 'Contraseña incorrecta'
-
-    return f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Admin - Login</title>
-        <style>
-            body {{ font-family: Arial; text-align: center; padding: 60px; background: #f0f0f0; }}
-            h1 {{ color: #333; }}
-            input {{ width: 300px; padding: 12px; margin: 10px; font-size: 16px; border-radius: 8px; border: 1px solid #ccc; }}
-            button {{ width: 300px; padding: 12px; background: #333; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; }}
-            .error {{ color: red; margin-top: 10px; }}
-        </style>
-    </head>
-    <body>
-        <h1>Panel de Administración</h1>
-        <p>Ingresa la contraseña para continuar</p>
-        <form method="POST">
-            <input type="password" name="password" placeholder="Contraseña" /><br>
-            <button type="submit">ENTRAR</button>
-        </form>
-        <p class="error">{error}</p>
-    </body>
-    </html>
-    """
-
-@app.route('/logout')
-def logout():
-    session.clear()
-    return redirect('/login')
-@app.route('/admin')
-@login_requerido
-def admin():
-    empleados = hoja_empleados.get_all_records()
-    turnos = hoja_turnos.get_all_records()
-
-    filas_empleados = ""
-    for e in empleados:
-        opciones_turnos = ""
-        for t in turnos:
-            selected = 'selected' if str(t['ID_TURNO']) == str(e.get('ID_TURNO', 1)) else ''
-            opciones_turnos += f"<option value='{t['ID_TURNO']}' {selected}>{t['NOMBRE_TURNO']}</option>"
-        filas_empleados += f"""
-        <tr>
-            <td>{e['NOMBRE']}</td>
-            <td>
-                <select onchange="cambiarTurno('{e['ID_DISPOSITIVO']}', this.value)">
-                    {opciones_turnos}
-                </select>
-            </td>
-        </tr>
-        """
-
-    html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Panel Admin</title>
-        <style>
-            body {{ font-family: Arial; padding: 30px; background: #f0f0f0; }}
-            h1 {{ color: #333; text-align: center; }}
-            table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; }}
-            th {{ background: #333; color: white; padding: 12px; text-align: left; }}
-            td {{ padding: 12px; border-bottom: 1px solid #eee; }}
-            select {{ padding: 8px; border-radius: 6px; border: 1px solid #ccc; font-size: 14px; }}
-            #mensaje {{ text-align: center; margin-top: 20px; font-weight: bold; color: #28a745; }}
-            .btn-reporte {{ display: block; width: 200px; margin: 20px auto; padding: 12px; background: #007bff; color: white; text-align: center; border-radius: 8px; text-decoration: none; font-size: 16px; }}
-        </style>
-    </head>
-    <body>
-        <h1>Panel de Administración</h1>
-        <a href="/reporte" class="btn-reporte">📥 Descargar Reporte</a>
-        <table>
-            <thead>
-                <tr>
-                    <th>Empleado</th>
-                    <th>Turno</th>
-                </tr>
-            </thead>
-            <tbody>
-                {filas_empleados}
-            </tbody>
-        </table>
-        <p id="mensaje"></p>
-        <script>
-            async function cambiarTurno(uuid, idTurno) {{
-                const res = await fetch('/cambiar_turno', {{
-                    method: 'POST',
-                    headers: {{'Content-Type': 'application/json'}},
-                    body: JSON.stringify({{uuid, id_turno: idTurno}})
-                }});
-                const data = await res.json();
-                document.getElementById('mensaje').innerText = data.mensaje;
-            }}
-        </script>
-    </body>
-    </html>
-    """
-    return html
-
-@app.route('/cambiar_turno', methods=['POST'])
-@login_requerido
-def cambiar_turno():
-    datos = request.json
-    uuid = datos['uuid']
-    id_turno = datos['id_turno']
-
-    empleados = hoja_empleados.get_all_records()
-    for i, e in enumerate(empleados, 2):
-        if e['ID_DISPOSITIVO'] == uuid:
-            hoja_empleados.update_cell(i, 4, id_turno)
-            return jsonify({'mensaje': f'Turno actualizado correctamente para {e["NOMBRE"]}'})
-
-    return jsonify({'mensaje': 'Empleado no encontrado'})
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
