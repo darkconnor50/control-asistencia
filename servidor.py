@@ -10,7 +10,6 @@ from openpyxl.styles import Font, PatternFill, Alignment
 
 app = Flask(__name__)
 
-# Configuración Google Sheets
 SCOPES = [
     'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/drive'
@@ -30,8 +29,8 @@ hoja = cliente.open_by_key(ID_HOJA)
 hoja_empleados = hoja.worksheet('EMPLEADOS')
 hoja_sucursales = hoja.worksheet('SUCURSALES')
 hoja_registros = hoja.worksheet('REGISTROS')
+hoja_turnos = hoja.worksheet('TURNOS')
 
-# Página principal al escanear QR
 @app.route('/sucursal/<id_sucursal>')
 def pagina_sucursal(id_sucursal):
     sucursales = hoja_sucursales.get_all_records()
@@ -129,7 +128,6 @@ def registrar():
 
     if sucursal_valida:
         prefijo_red = '.'.join(ip_cliente.split('.')[:2])
-        prefijo_sucursal = '.'.join(sucursal_valida['WIFI'].split('.')[:1])
         ip_servidor = request.host.split(':')[0]
         prefijo_servidor = '.'.join(ip_servidor.split('.')[:2])
 
@@ -146,20 +144,25 @@ def registrar():
     if not empleado:
         if not nombre_input:
             return jsonify({'mensaje': 'Primera vez: ingresa tu nombre completo'})
-        hoja_empleados.append_row([uuid, nombre_input, datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
+        hoja_empleados.append_row([uuid, nombre_input, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 1])
         nombre = nombre_input
+        id_turno = 1
     else:
         nombre = empleado['NOMBRE']
+        id_turno = empleado.get('ID_TURNO', 1)
 
-    sucursales = hoja_sucursales.get_all_records()
     sucursal = next((s for s in sucursales if str(s['ID_SUCURSAL']) == id_sucursal), None)
+
+    # Buscar turno del empleado
+    turnos = hoja_turnos.get_all_records()
+    turno = next((t for t in turnos if str(t['ID_TURNO']) == str(id_turno)), None)
 
     ahora = datetime.now()
     retardo = 'NO'
     mensaje_retardo = ''
 
-    if tipo == 'ENTRADA' and 'HORA_ENTRADA' in sucursal:
-        hora_limite = datetime.strptime(sucursal['HORA_ENTRADA'], '%H:%M').replace(
+    if tipo == 'ENTRADA' and turno:
+        hora_limite = datetime.strptime(turno['HORA_ENTRADA'], '%H:%M').replace(
             year=ahora.year, month=ahora.month, day=ahora.day)
         if ahora > hora_limite:
             minutos_tarde = int((ahora - hora_limite).total_seconds() / 60)
