@@ -272,7 +272,7 @@ def admin():
             td {{ padding: 12px; border-bottom: 1px solid #eee; }}
             select {{ padding: 8px; border-radius: 6px; border: 1px solid #ccc; font-size: 14px; }}
             #mensaje {{ text-align: center; margin-top: 20px; font-weight: bold; color: #28a745; }}
-            .btn-reporte {{ display: inline-block; padding: 12px 24px; background: #007bff; color: white; text-align: center; border-radius: 8px; text-decoration: none; font-size: 16px; margin: 10px; }}
+            .btn-reporte {{ padding: 12px 24px; background: #007bff; color: white; border: none; border-radius: 8px; font-size: 16px; margin: 10px; cursor: pointer; }}
             .btn-logout {{ display: inline-block; padding: 12px 24px; background: #dc3545; color: white; text-align: center; border-radius: 8px; text-decoration: none; font-size: 16px; margin: 10px; }}
             .botones {{ text-align: center; margin-bottom: 20px; }}
         </style>
@@ -280,7 +280,7 @@ def admin():
     <body>
         <h1>Panel de Administración</h1>
         <div class="botones">
-            <a href="/reporte" class="btn-reporte">📥 Descargar Reporte</a>
+            <button onclick="descargarReporte()" class="btn-reporte">📥 Descargar Reporte</button>
             <a href="/logout" class="btn-logout">🚪 Cerrar Sesión</a>
         </div>
         <table>
@@ -296,6 +296,21 @@ def admin():
         </table>
         <p id="mensaje"></p>
         <script>
+            async function descargarReporte() {{
+                const res = await fetch('/reporte');
+                if (res.ok) {{
+                    const blob = await res.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'reporte.xlsx';
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                }} else {{
+                    alert('No hay registros para generar reporte.');
+                }}
+            }}
+
             async function cambiarTurno(uuid, idTurno) {{
                 const res = await fetch('/cambiar_turno', {{
                     method: 'POST',
