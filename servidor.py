@@ -1,3 +1,5 @@
+import os
+import json
 from flask import Flask, request, jsonify, render_template_string
 import gspread
 from google.oauth2.service_account import Credentials
@@ -14,7 +16,7 @@ SCOPES = [
 ID_HOJA = '159p8vlPVs0Nh1yMjuXdFhUGclXjT6e9BalQ2H8No6dA'
 
 import os, json
-creds_json = os.environ.get("GOOGLE_CREDENTIALS")
+creds_json = os.environ.get("GOOGLE_CREDENTIALS", "").strip().lstrip('\ufeff')
 if creds_json:
     creds = Credentials.from_service_account_info(json.loads(creds_json), scopes=SCOPES)
 else:
