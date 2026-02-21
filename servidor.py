@@ -251,7 +251,64 @@ def descargar_reporte():
         as_attachment=True,
         download_name=f'reporte_{fecha_reporte}.xlsx'
     )
+from functools import wraps
+from flask import session, redirect, url_for
+
+app.secret_key = os.environ.get("SECRET_KEY", "clave_secreta_123")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
+
+def login_requerido(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get('autenticado'):
+            return redirect('/login')
+        return f(*args, **kwargs)
+    return decorated
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    error = ''
+    if request.method == 'POST':
+        password = request.form.get('password')
+        if password == ADMIN_PASSWORD:
+            session['autenticado'] = True
+            return redirect('/admin')
+        else:
+            error = 'Contraseña incorrecta'
+
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Admin - Login</title>
+        <style>
+            body {{ font-family: Arial; text-align: center; padding: 60px; background: #f0f0f0; }}
+            h1 {{ color: #333; }}
+            input {{ width: 300px; padding: 12px; margin: 10px; font-size: 16px; border-radius: 8px; border: 1px solid #ccc; }}
+            button {{ width: 300px; padding: 12px; background: #333; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; }}
+            .error {{ color: red; margin-top: 10px; }}
+        </style>
+    </head>
+    <body>
+        <h1>Panel de Administración</h1>
+        <p>Ingresa la contraseña para continuar</p>
+        <form method="POST">
+            <input type="password" name="password" placeholder="Contraseña" /><br>
+            <button type="submit">ENTRAR</button>
+        </form>
+        <p class="error">{error}</p>
+    </body>
+    </html>
+    """
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect('/login')
 @app.route('/admin')
+@login_requerido
 def admin():
     empleados = hoja_empleados.get_all_records()
     turnos = hoja_turnos.get_all_records()
@@ -323,6 +380,7 @@ def admin():
     return html
 
 @app.route('/cambiar_turno', methods=['POST'])
+@login_requerido
 def cambiar_turno():
     datos = request.json
     uuid = datos['uuid']
