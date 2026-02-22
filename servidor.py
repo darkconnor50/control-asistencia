@@ -213,6 +213,24 @@ def registrar():
     turno = next((t for t in turnos if str(t['ID_TURNO']) == str(id_turno)), None)
 
     ahora = datetime.now(ZONA_HORARIA)
+    hoy = ahora.strftime('%Y-%m-%d')
+
+    # Verificar si ya registró entrada hoy
+    if tipo == 'ENTRADA':
+        registros_hoy = [r for r in hoja_registros.get_all_records()
+                         if r['NOMBRE'] == nombre and r['FECHA'] == hoy and r['TIPO'] == 'ENTRADA']
+        if registros_hoy:
+            hora_entrada = registros_hoy[0]['HORA']
+            return jsonify({'mensaje': f'⚠️ {nombre}, ya registraste tu entrada hoy a las {hora_entrada}'})
+
+    # Verificar si ya registró salida hoy
+    if tipo == 'SALIDA':
+        registros_hoy = [r for r in hoja_registros.get_all_records()
+                         if r['NOMBRE'] == nombre and r['FECHA'] == hoy and r['TIPO'] == 'SALIDA']
+        if registros_hoy:
+            hora_salida = registros_hoy[0]['HORA']
+            return jsonify({'mensaje': f'⚠️ {nombre}, ya registraste tu salida hoy a las {hora_salida}'})
+
     retardo = 'NO'
     mensaje_retardo = ''
 
