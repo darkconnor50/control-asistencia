@@ -5,7 +5,7 @@ from functools import wraps
 from flask import Flask, request, jsonify, send_file, session, redirect
 import gspread
 from google.oauth2.service_account import Credentials
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 
@@ -17,6 +17,7 @@ SCOPES = [
 ]
 
 ID_HOJA = '159p8vlPVs0Nh1yMjuXdFhUGclXjT6e9BalQ2H8No6dA'
+ZONA_HORARIA = timezone(timedelta(hours=-6))  # México Centro
 
 app.secret_key = os.environ.get("SECRET_KEY", "clave_secreta_123")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
@@ -199,7 +200,7 @@ def registrar():
     if not empleado:
         if not nombre_input:
             return jsonify({'mensaje': 'Primera vez: ingresa tu nombre completo'})
-        hoja_empleados.append_row([uuid, nombre_input, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 1])
+        hoja_empleados.append_row([uuid, nombre_input, datetime.now(ZONA_HORARIA).strftime('%Y-%m-%d %H:%M:%S'), 1])
         nombre = nombre_input
         id_turno = 1
     else:
@@ -211,13 +212,14 @@ def registrar():
     turnos = hoja_turnos.get_all_records()
     turno = next((t for t in turnos if str(t['ID_TURNO']) == str(id_turno)), None)
 
-    ahora = datetime.now()
+    ahora = datetime.now(ZONA_HORARIA)
     retardo = 'NO'
     mensaje_retardo = ''
 
     if tipo == 'ENTRADA' and turno:
         hora_limite = datetime.strptime(turno['HORA_ENTRADA'], '%H:%M').replace(
-            year=ahora.year, month=ahora.month, day=ahora.day)
+            year=ahora.year, month=ahora.month, day=ahora.day,
+            tzinfo=ZONA_HORARIA)
         if ahora > hora_limite:
             minutos_tarde = int((ahora - hora_limite).total_seconds() / 60)
             retardo = f'{minutos_tarde} min'
@@ -406,7 +408,7 @@ def descargar_reporte():
     wb.save(output)
     output.seek(0)
 
-    fecha_reporte = datetime.now().strftime('%Y-%m-%d_%H-%M')
+    fecha_reporte = datetime.now(ZONA_HORARIA).strftime('%Y-%m-%d_%H-%M')
     return send_file(
         output,
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
